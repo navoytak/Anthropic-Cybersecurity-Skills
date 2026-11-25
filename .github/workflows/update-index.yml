@@ -18,11 +18,15 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install index generator dependency
+        run: python3 -m pip install --disable-pip-version-check --quiet PyYAML==6.0.2
+
       - name: Regenerate index.json
         run: |
           python3 << 'EOF'
           import os, json, re
           from datetime import datetime, timezone
+          import yaml
 
           skills_dir = "skills"
           skills = []
@@ -36,33 +40,15 @@ jobs:
               fm_match = re.match(r"^---\n(.*?)\n---", content, re.DOTALL)
               description = ""
               if fm_match:
-                  fm = fm_match.group(1)
-                  dm = re.search(r"^description:[ \t]*(.*)$", fm, re.MULTILINE)
-                  if dm:
-                      first = dm.group(1).strip()
-                      if first[:1] in (">", "|"):
-                          # YAML block scalar: gather the following more-indented lines
-                          buf = []
-                          for ln in fm[dm.end():].split("\n"):
-                              if ln.strip() == "":
-                                  buf.append("")
-                              elif re.match(r"^[ \t]+\S", ln):
-                                  buf.append(ln.strip())
-                              else:
-                                  break
-                          if first.startswith(">"):  # folded: blank line = break, else join w/ space
-                              paras, cur = [], []
-                              for b in buf:
-                                  if b == "":
-                                      if cur: paras.append(" ".join(cur)); cur = []
-                                  else:
-                                      cur.append(b)
-                              if cur: paras.append(" ".join(cur))
-                              description = " ".join(paras).strip()
-                          else:  # literal
-                              description = " ".join(b for b in buf if b).strip()
-                      else:
-                          description = first.strip('"').strip("'")
+                  metadata = yaml.safe_load(fm_match.group(1))
+                  if not isinstance(metadata, dict):
+                      raise ValueError(f"{skill_md}: YAML frontmatter must be a mapping")
+                  value = metadata.get("description", "")
+                  if value is None:
+                      value = ""
+                  if not isinstance(value, str):
+                      raise ValueError(f"{skill_md}: description must be a string")
+                  description = " ".join(value.split())
               skills.append({
                   "name": skill_name,
                   "description": description,
